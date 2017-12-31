@@ -6,12 +6,12 @@
 using namespace bugle;
 
 EvalStmt *EvalStmt::create(ref<Expr> expr, const SourceLocsRef &sourcelocs) {
-  assert(!expr->hasEvalStmt);
-  expr->hasEvalStmt = true;
-  return new EvalStmt(expr, sourcelocs);
+  auto *evalStmt = new EvalStmt(expr, sourcelocs);
+  expr->setEvalStmt(evalStmt);
+  return evalStmt;
 }
 
-EvalStmt::~EvalStmt() { expr->hasEvalStmt = false; }
+EvalStmt::~EvalStmt() { expr->setEvalStmt(nullptr); }
 
 StoreStmt *StoreStmt::create(ref<Expr> array, ref<Expr> offset, ref<Expr> value,
                              const SourceLocsRef &sourcelocs) {

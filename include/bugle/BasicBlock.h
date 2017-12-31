@@ -24,7 +24,7 @@ public:
   }
 
   void addEvalStmt(ref<Expr> e, const SourceLocsRef &sourcelocs) {
-    if (e->hasEvalStmt || e->preventEvalStmt)
+    if (e->hasEvalStmt() || e->preventEvalStmt)
       return;
 
     auto ES = EvalStmt::create(e, sourcelocs);

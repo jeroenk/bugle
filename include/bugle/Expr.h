@@ -16,6 +16,7 @@ class Value;
 
 namespace bugle {
 
+class EvalStmt;
 class Function;
 class GlobalArray;
 class Var;
@@ -148,7 +149,7 @@ public:
   };
 
   unsigned refCount;
-  bool preventEvalStmt : 1, hasEvalStmt : 1;
+  bool preventEvalStmt : 1;
 
   static ref<Expr> createPtrLt(ref<Expr> lhs, ref<Expr> rhs, Type defaultRange);
   static ref<Expr> createPtrLe(ref<Expr> lhs, ref<Expr> rhs, Type defaultRange);
@@ -163,12 +164,20 @@ public:
   static Type getPointerRange(ref<Expr> pointer, Type defaultRange);
   bool computeArrayCandidates(std::set<GlobalArray *> &GlobalSet) const;
 
+  bool hasEvalStmt() const { return evalStmt != nullptr; }
+  EvalStmt *getEvalStmt() const { return evalStmt; }
+  void setEvalStmt(EvalStmt *evalStmt) {
+    assert(evalStmt == nullptr || !hasEvalStmt());
+    this->evalStmt = evalStmt;
+  }
+
 private:
+  EvalStmt *evalStmt;
   Type type;
 
 protected:
   Expr(Type type)
-      : refCount(0), preventEvalStmt(false), hasEvalStmt(false), type(type) {}
+      : refCount(0), preventEvalStmt(false), evalStmt(nullptr), type(type) {}
 
 public:
   virtual ~Expr() {}
