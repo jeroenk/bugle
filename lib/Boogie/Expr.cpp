@@ -41,14 +41,24 @@ ref<Expr> BVConstExpr::create(unsigned width, uint64_t val, bool isSigned) {
   return create(llvm::APInt(width, val, isSigned));
 }
 
+ref<Expr> BVConstExpr::shallowCopy() { return new BVConstExpr(bv); }
+
 ref<Expr> BoolConstExpr::create(bool val) { return new BoolConstExpr(val); }
+
+ref<Expr> BoolConstExpr::shallowCopy() { return new BoolConstExpr(val); }
 
 ref<Expr> GlobalArrayRefExpr::create(GlobalArray *global) {
   return new GlobalArrayRefExpr(Type(Type::ArrayOf, global->getRangeType()),
                                 global);
 }
 
+ref<Expr> GlobalArrayRefExpr::shallowCopy() {
+  return new GlobalArrayRefExpr(getType(), array);
+}
+
 ref<Expr> NullArrayRefExpr::create() { return new NullArrayRefExpr(); }
+
+ref<Expr> NullArrayRefExpr::shallowCopy() { return new NullArrayRefExpr(); }
 
 ref<Expr> ConstantArrayRefExpr::create(llvm::ArrayRef<ref<Expr>> array) {
   assert(array.size() > 0);
@@ -62,6 +72,10 @@ ref<Expr> ConstantArrayRefExpr::create(llvm::ArrayRef<ref<Expr>> array) {
   return new ConstantArrayRefExpr(array);
 }
 
+ref<Expr> ConstantArrayRefExpr::shallowCopy() {
+  return new ConstantArrayRefExpr(array);
+}
+
 ref<Expr> PointerExpr::create(ref<Expr> array, ref<Expr> offset) {
   assert(array->getType().array);
   assert(offset->getType().isKind(Type::BV));
@@ -69,12 +83,22 @@ ref<Expr> PointerExpr::create(ref<Expr> array, ref<Expr> offset) {
   return new PointerExpr(array, offset);
 }
 
+ref<Expr> PointerExpr::shallowCopy() { return new PointerExpr(array, offset); }
+
 ref<Expr> NullFunctionPointerExpr::create(unsigned ptrWidth) {
   return new NullFunctionPointerExpr(ptrWidth);
 }
 
+ref<Expr> NullFunctionPointerExpr::shallowCopy() {
+  return new NullFunctionPointerExpr(getType().width);
+}
+
 ref<Expr> FunctionPointerExpr::create(std::string funcName, unsigned ptrWidth) {
   return new FunctionPointerExpr(funcName, ptrWidth);
+}
+
+ref<Expr> FunctionPointerExpr::shallowCopy() {
+  return new FunctionPointerExpr(funcName, getType().width);
 }
 
 ref<Expr> LoadExpr::create(ref<Expr> array, ref<Expr> offset, Type type,
@@ -93,6 +117,10 @@ ref<Expr> LoadExpr::create(ref<Expr> array, ref<Expr> offset, Type type,
   return new LoadExpr(type, array, offset, isTemporal);
 }
 
+ref<Expr> LoadExpr::shallowCopy() {
+  return new LoadExpr(getType(), array, offset, isTemporal);
+}
+
 ref<Expr> AtomicExpr::create(ref<Expr> array, ref<Expr> offset,
                              std::vector<ref<Expr>> args, std::string function,
                              unsigned parts, unsigned part) {
@@ -104,10 +132,20 @@ ref<Expr> AtomicExpr::create(ref<Expr> array, ref<Expr> offset,
   return new AtomicExpr(at.range(), array, offset, args, function, parts, part);
 }
 
+ref<Expr> AtomicExpr::shallowCopy() {
+  return new AtomicExpr(getType(), array, offset, args, function, parts, part);
+}
+
 ref<Expr> VarRefExpr::create(Var *var) { return new VarRefExpr(var); }
+
+ref<Expr> VarRefExpr::shallowCopy() { return new VarRefExpr(var); }
 
 ref<Expr> SpecialVarRefExpr::create(Type t, const std::string &attr) {
   return new SpecialVarRefExpr(t, attr);
+}
+
+ref<Expr> SpecialVarRefExpr::shallowCopy() {
+  return new SpecialVarRefExpr(getType(), attr);
 }
 
 ref<Expr> BVExtractExpr::create(ref<Expr> expr, unsigned offset,
@@ -144,11 +182,19 @@ ref<Expr> BVExtractExpr::create(ref<Expr> expr, unsigned offset,
   return new BVExtractExpr(expr, offset, width);
 }
 
+ref<Expr> BVExtractExpr::shallowCopy() {
+  return new BVExtractExpr(expr, offset, getType().width);
+}
+
 ref<Expr> BVCtlzExpr::create(ref<Expr> val, ref<Expr> isZeroUndef) {
   assert(val->getType().isKind(Type::BV));
   assert(isZeroUndef->getType().isKind(Type::Bool));
 
   return new BVCtlzExpr(val->getType(), val, isZeroUndef);
+}
+
+ref<Expr> BVCtlzExpr::shallowCopy() {
+  return new BVCtlzExpr(getType(), val, isZeroUndef);
 }
 
 ref<Expr> NotExpr::create(ref<Expr> op) {
@@ -190,6 +236,10 @@ ref<Expr> ArrayIdExpr::create(ref<Expr> pointer, Type defaultRange) {
   Type range = getPointerRange(pointer, defaultRange);
 
   return new ArrayIdExpr(Type(Type::ArrayOf, range), pointer);
+}
+
+ref<Expr> ArrayIdExpr::shallowCopy() {
+  return new ArrayIdExpr(getType(), getSubExpr());
 }
 
 ref<Expr> ArrayOffsetExpr::create(ref<Expr> pointer) {
@@ -357,7 +407,13 @@ ref<Expr> IfThenElseExpr::create(ref<Expr> cond, ref<Expr> trueExpr,
   return new IfThenElseExpr(cond, trueExpr, falseExpr);
 }
 
+ref<Expr> IfThenElseExpr::shallowCopy() {
+  return new IfThenElseExpr(cond, trueExpr, falseExpr);
+}
+
 ref<Expr> HavocExpr::create(Type type) { return new HavocExpr(type); }
+
+ref<Expr> HavocExpr::shallowCopy() { return new HavocExpr(getType()); }
 
 ref<Expr> ArrayMemberOfExpr::create(ref<Expr> expr,
                                     const std::set<GlobalArray *> &elems) {
@@ -371,6 +427,10 @@ ref<Expr> ArrayMemberOfExpr::create(ref<Expr> expr,
   }));
 
   return new ArrayMemberOfExpr(Type(Type::ArrayOf, Ty), expr, elems);
+}
+
+ref<Expr> ArrayMemberOfExpr::shallowCopy() {
+  return new ArrayMemberOfExpr(getType(), expr, elems);
 }
 
 ref<Expr> BVToPtrExpr::create(unsigned ptrWidth, ref<Expr> bv) {
@@ -991,6 +1051,10 @@ ref<Expr> CallExpr::create(Function *f, const std::vector<ref<Expr>> &args) {
   return new CallExpr((*f->return_begin())->getType(), f, args);
 }
 
+ref<Expr> CallExpr::shallowCopy() {
+  return new CallExpr(getType(), callee, args);
+}
+
 ref<Expr> CallMemberOfExpr::create(ref<Expr> f, std::vector<ref<Expr>> &ces) {
   assert(f->getType().isKind(Type::FunctionPointer));
   assert(ces.size() > 0);
@@ -1002,6 +1066,10 @@ ref<Expr> CallMemberOfExpr::create(ref<Expr> f, std::vector<ref<Expr>> &ces) {
   }));
 
   return new CallMemberOfExpr(Ty, f, ces);
+}
+
+ref<Expr> CallMemberOfExpr::shallowCopy() {
+  return new CallMemberOfExpr(getType(), func, callExprs);
 }
 
 ref<Expr> OldExpr::create(ref<Expr> op) {
@@ -1035,10 +1103,18 @@ ref<Expr> AccessHasOccurredExpr::create(ref<Expr> array, bool isWrite) {
   return new AccessHasOccurredExpr(array, isWrite);
 }
 
+ref<Expr> AccessHasOccurredExpr::shallowCopy() {
+  return new AccessHasOccurredExpr(array, isWrite);
+}
+
 ref<Expr> AccessOffsetExpr::create(ref<Expr> array, unsigned pointerSize,
                                    bool isWrite) {
   assert(array->getType().array);
   return new AccessOffsetExpr(array, pointerSize, isWrite);
+}
+
+ref<Expr> AccessOffsetExpr::shallowCopy() {
+  return new AccessOffsetExpr(array, getType().width, isWrite);
 }
 
 ref<Expr> ArraySnapshotExpr::create(ref<Expr> dst, ref<Expr> src) {
@@ -1048,9 +1124,17 @@ ref<Expr> ArraySnapshotExpr::create(ref<Expr> dst, ref<Expr> src) {
   return new ArraySnapshotExpr(dst, src);
 }
 
+ref<Expr> ArraySnapshotExpr::shallowCopy() {
+  return new ArraySnapshotExpr(dst, src);
+}
+
 ref<Expr> UnderlyingArrayExpr::create(ref<Expr> array) {
   assert(array->getType().array);
 
+  return new UnderlyingArrayExpr(array);
+}
+
+ref<Expr> UnderlyingArrayExpr::shallowCopy() {
   return new UnderlyingArrayExpr(array);
 }
 
@@ -1060,6 +1144,10 @@ ref<Expr> AddNoovflExpr::create(ref<Expr> first, ref<Expr> second,
   assert(second->getType().isKind(Type::BV));
   assert(first->getType().width == second->getType().width);
 
+  return new AddNoovflExpr(first, second, isSigned);
+}
+
+ref<Expr> AddNoovflExpr::shallowCopy() {
   return new AddNoovflExpr(first, second, isSigned);
 }
 
@@ -1073,10 +1161,18 @@ ref<Expr> AddNoovflPredicateExpr::create(const std::vector<ref<Expr>> &exprs) {
   return new AddNoovflPredicateExpr(exprs);
 }
 
+ref<Expr> AddNoovflPredicateExpr::shallowCopy() {
+  return new AddNoovflPredicateExpr(exprs);
+}
+
 ref<Expr>
 UninterpretedFunctionExpr::create(const std::string &name, Type returnType,
                                   const std::vector<ref<Expr>> &args) {
   return new UninterpretedFunctionExpr(name, returnType, args);
+}
+
+ref<Expr> UninterpretedFunctionExpr::shallowCopy() {
+  return new UninterpretedFunctionExpr(name, getType(), args);
 }
 
 ref<Expr> AtomicHasTakenValueExpr::create(ref<Expr> atomicArray,
@@ -1085,6 +1181,10 @@ ref<Expr> AtomicHasTakenValueExpr::create(ref<Expr> atomicArray,
   assert(offset->getType().isKind(Type::BV));
   assert(value->getType().isKind(Type::BV));
 
+  return new AtomicHasTakenValueExpr(atomicArray, offset, value);
+}
+
+ref<Expr> AtomicHasTakenValueExpr::shallowCopy() {
   return new AtomicHasTakenValueExpr(atomicArray, offset, value);
 }
 
@@ -1097,6 +1197,11 @@ ref<Expr> AsyncWorkGroupCopyExpr::create(ref<Expr> dst, ref<Expr> dstOffset,
   assert(srcOffset->getType().isKind(Type::BV));
   assert(size->getType().isKind(Type::BV));
   assert(handle->getType().isKind(Type::BV));
+  return new AsyncWorkGroupCopyExpr(dst, dstOffset, src, srcOffset, size,
+                                    handle);
+}
+
+ref<Expr> AsyncWorkGroupCopyExpr::shallowCopy() {
   return new AsyncWorkGroupCopyExpr(dst, dstOffset, src, srcOffset, size,
                                     handle);
 }

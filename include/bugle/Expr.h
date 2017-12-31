@@ -172,6 +172,7 @@ protected:
 
 public:
   virtual ~Expr() {}
+  virtual ref<Expr> shallowCopy() = 0;
   virtual Kind getKind() const = 0;
   const Type &getType() const { return type; }
 
@@ -194,6 +195,7 @@ public:
   static ref<Expr> createZero(unsigned width);
 
   EXPR_KIND(BVConst)
+  ref<Expr> shallowCopy() override;
   const llvm::APInt &getValue() const { return bv; }
 };
 
@@ -205,6 +207,7 @@ public:
   static ref<Expr> create(bool val);
 
   EXPR_KIND(BoolConst)
+  ref<Expr> shallowCopy() override;
   bool getValue() const { return val; }
 };
 
@@ -216,6 +219,7 @@ public:
   static ref<Expr> create(GlobalArray *array);
 
   EXPR_KIND(GlobalArrayRef)
+  ref<Expr> shallowCopy() override;
   GlobalArray *getArray() const { return array; }
 };
 
@@ -226,6 +230,7 @@ public:
   static ref<Expr> create();
 
   EXPR_KIND(NullArrayRef)
+  ref<Expr> shallowCopy() override;
 };
 
 class ConstantArrayRefExpr : public Expr {
@@ -238,6 +243,7 @@ public:
   static ref<Expr> create(llvm::ArrayRef<ref<Expr>> array);
 
   EXPR_KIND(ConstantArrayRef)
+  ref<Expr> shallowCopy() override;
   const std::vector<ref<Expr>> &getArray() const { return array; }
 };
 
@@ -251,6 +257,7 @@ public:
   static ref<Expr> create(ref<Expr> array, ref<Expr> offset);
 
   EXPR_KIND(Pointer)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return array; }
   ref<Expr> getOffset() const { return offset; }
 };
@@ -263,6 +270,7 @@ public:
   static ref<Expr> create(unsigned ptrWidth);
 
   EXPR_KIND(NullFunctionPointer)
+  ref<Expr> shallowCopy() override;
 };
 
 class FunctionPointerExpr : public Expr {
@@ -274,6 +282,7 @@ public:
   static ref<Expr> create(std::string funcName, unsigned ptrWidth);
 
   EXPR_KIND(FunctionPointer)
+  ref<Expr> shallowCopy() override;
   std::string getFuncName() const { return funcName; }
 };
 
@@ -288,6 +297,7 @@ public:
                           bool isTemporal);
 
   EXPR_KIND(Load)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return array; }
   ref<Expr> getOffset() const { return offset; }
   bool getIsTemporal() const { return isTemporal; }
@@ -310,6 +320,7 @@ public:
                           unsigned int parts, unsigned int part);
 
   EXPR_KIND(Atomic)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return array; }
   ref<Expr> getOffset() const { return offset; }
   std::vector<ref<Expr>> getArgs() const { return args; }
@@ -329,6 +340,7 @@ class VarRefExpr : public Expr {
 public:
   static ref<Expr> create(Var *var);
   EXPR_KIND(VarRef)
+  ref<Expr> shallowCopy() override;
   Var *getVar() const { return var; }
 };
 
@@ -340,6 +352,7 @@ class SpecialVarRefExpr : public Expr {
 public:
   static ref<Expr> create(Type t, const std::string &attr);
   EXPR_KIND(SpecialVarRef)
+  ref<Expr> shallowCopy() override;
   const std::string &getAttr() const { return attr; }
 };
 
@@ -353,6 +366,7 @@ public:
   static ref<Expr> create(ref<Expr> expr, unsigned offset, unsigned width);
 
   EXPR_KIND(BVExtract)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getSubExpr() const { return expr; }
   unsigned getOffset() const { return offset; }
 };
@@ -366,6 +380,7 @@ public:
   static ref<Expr> create(ref<Expr> val, ref<Expr> isZeroUndef);
 
   EXPR_KIND(BVCtlz)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getVal() const { return val; }
   ref<Expr> getIsZeroUndef() const { return isZeroUndef; }
 };
@@ -379,7 +394,9 @@ class IfThenElseExpr : public Expr {
 public:
   static ref<Expr> create(ref<Expr> cond, ref<Expr> trueExpr,
                           ref<Expr> falseExpr);
+
   EXPR_KIND(IfThenElse)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getCond() const { return cond; }
   ref<Expr> getTrueExpr() const { return trueExpr; }
   ref<Expr> getFalseExpr() const { return falseExpr; }
@@ -390,7 +407,9 @@ class HavocExpr : public Expr {
 
 public:
   static ref<Expr> create(Type type);
+
   EXPR_KIND(Havoc)
+  ref<Expr> shallowCopy() override;
 };
 
 /// Expression which denotes that its subexpression is an arrayId and a member
@@ -407,6 +426,7 @@ public:
   static ref<Expr> create(ref<Expr> expr, const std::set<GlobalArray *> &elems);
 
   EXPR_KIND(ArrayMemberOf)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getSubExpr() const { return expr; }
   const std::set<GlobalArray *> &getElems() const { return elems; }
 };
@@ -433,6 +453,9 @@ public:
   public:                                                                      \
     static ref<Expr> create(ref<Expr> var);                                    \
     EXPR_KIND(kind)                                                            \
+    ref<Expr> shallowCopy() override {                                         \
+      return new kind##Expr(getType(), getSubExpr());                          \
+    }                                                                          \
   };
 
 UNARY_EXPR(Not)
@@ -443,6 +466,7 @@ class ArrayIdExpr : public UnaryExpr {
 public:
   static ref<Expr> create(ref<Expr> var, Type defaultRange);
   EXPR_KIND(ArrayId)
+  ref<Expr> shallowCopy() override;
 };
 
 UNARY_EXPR(ArrayOffset)
@@ -480,6 +504,9 @@ UNARY_EXPR(GetImageHeight)
   public:                                                                      \
     static ref<Expr> create(unsigned width, ref<Expr> var);                    \
     EXPR_KIND(kind)                                                            \
+    ref<Expr> shallowCopy() override {                                         \
+      return new kind##Expr(getType(), getSubExpr());                          \
+    }                                                                          \
   };
 
 UNARY_CONV_EXPR(BVToPtr)
@@ -525,6 +552,9 @@ public:
   public:                                                                      \
     static ref<Expr> create(ref<Expr> lhs, ref<Expr> rhs);                     \
     EXPR_KIND(kind)                                                            \
+    ref<Expr> shallowCopy() override {                                         \
+      return new kind##Expr(getType(), getLHS(), getRHS());                    \
+    }                                                                          \
   };
 
 BINARY_EXPR(Eq)
@@ -581,6 +611,7 @@ public:
   static ref<Expr> create(Function *callee, const std::vector<ref<Expr>> &args);
 
   EXPR_KIND(Call)
+  ref<Expr> shallowCopy() override;
   Function *getCallee() const { return callee; }
   const std::vector<ref<Expr>> &getArgs() const { return args; }
 };
@@ -595,6 +626,7 @@ public:
   static ref<Expr> create(ref<Expr> func, std::vector<ref<Expr>> &callExprs);
 
   EXPR_KIND(CallMemberOf)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getFunc() const { return func; }
   std::vector<ref<Expr>> getCallExprs() const { return callExprs; }
 };
@@ -609,6 +641,7 @@ public:
   static ref<Expr> create(ref<Expr> array, bool isWrite);
 
   EXPR_KIND(AccessHasOccurred)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return array; }
   std::string getAccessKind() { return isWrite ? "WRITE" : "READ"; }
 };
@@ -623,6 +656,7 @@ public:
   static ref<Expr> create(ref<Expr> array, unsigned pointerSize, bool isWrite);
 
   EXPR_KIND(AccessOffset)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return array; }
   std::string getAccessKind() { return isWrite ? "WRITE" : "READ"; }
 };
@@ -637,6 +671,7 @@ public:
   static ref<Expr> create(ref<Expr> dst, ref<Expr> src);
 
   EXPR_KIND(ArraySnapshot)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getDst() const { return dst; }
   ref<Expr> getSrc() const { return src; }
 };
@@ -649,6 +684,7 @@ public:
   static ref<Expr> create(ref<Expr> array);
 
   EXPR_KIND(UnderlyingArray)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return array; }
 };
 
@@ -664,6 +700,7 @@ public:
   static ref<Expr> create(ref<Expr> first, ref<Expr> second, bool isSigned);
 
   EXPR_KIND(AddNoovfl)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getFirst() const { return first; }
   ref<Expr> getSecond() const { return second; }
   bool getIsSigned() const { return isSigned; }
@@ -678,6 +715,7 @@ public:
   static ref<Expr> create(const std::vector<ref<Expr>> &exprs);
 
   EXPR_KIND(AddNoovflPredicate)
+  ref<Expr> shallowCopy() override;
   const std::vector<ref<Expr>> &getExprs() const { return exprs; }
 };
 
@@ -693,6 +731,7 @@ public:
                           const std::vector<ref<Expr>> &args);
 
   EXPR_KIND(UninterpretedFunction)
+  ref<Expr> shallowCopy() override;
   const std::string &getName() { return name; }
   unsigned getNumOperands() const { return args.size(); }
   ref<Expr> getOperand(unsigned index) const { return args[index]; }
@@ -712,6 +751,7 @@ public:
                           ref<Expr> value);
 
   EXPR_KIND(AtomicHasTakenValue)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getArray() const { return atomicArray; }
   ref<Expr> getOffset() const { return offset; }
   ref<Expr> getValue() const { return value; }
@@ -734,14 +774,14 @@ public:
                           ref<Expr> srcOffset, ref<Expr> size,
                           ref<Expr> handle);
 
+  EXPR_KIND(AsyncWorkGroupCopy)
+  ref<Expr> shallowCopy() override;
   ref<Expr> getDst() const { return dst; }
   ref<Expr> getDstOffset() const { return dstOffset; }
   ref<Expr> getSrc() const { return src; }
   ref<Expr> getSrcOffset() const { return srcOffset; }
   ref<Expr> getSize() const { return size; }
   ref<Expr> getHandle() const { return handle; }
-
-  EXPR_KIND(AsyncWorkGroupCopy)
 };
 }
 
