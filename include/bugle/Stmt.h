@@ -30,13 +30,20 @@ public:
 
   virtual ~Stmt() {}
   virtual Kind getKind() const = 0;
+  BasicBlock *getParent() const { return parent; }
+  void setParent(BasicBlock *parent) {
+    assert(this->parent == nullptr);
+    this->parent = parent;
+  }
   virtual SourceLocsRef &getSourceLocs() { return sourcelocs; }
 
 protected:
-  Stmt() {}
-  Stmt(const SourceLocsRef &sourcelocs) : sourcelocs(sourcelocs) {}
+  Stmt() : parent(nullptr) {}
+  Stmt(const SourceLocsRef &sourcelocs)
+      : parent(nullptr), sourcelocs(sourcelocs) {}
 
 private:
+  BasicBlock *parent;
   SourceLocsRef sourcelocs;
 };
 

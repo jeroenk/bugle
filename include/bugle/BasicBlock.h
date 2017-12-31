@@ -17,7 +17,12 @@ class BasicBlock {
 
 public:
   BasicBlock(const std::string &name) : name(name) {}
-  void addStmt(Stmt *stmt) { stmts.push_back(stmt); }
+
+  void addStmt(Stmt *stmt) {
+    stmt->setParent(this);
+    stmts.push_back(stmt);
+  }
+
   void addEvalStmt(ref<Expr> e, const SourceLocsRef &sourcelocs) {
     if (e->hasEvalStmt || e->preventEvalStmt)
       return;
