@@ -5,6 +5,7 @@
 #include "bugle/Stmt.h"
 #include "bugle/Translator/TranslateModule.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/IR/Dominators.h"
 #include <functional>
 #include <map>
 #include <vector>
@@ -41,8 +42,10 @@ class TranslateFunction {
   TranslateModule *TM;
   Function *BF;
   llvm::Function *F;
+  std::unique_ptr<llvm::DominatorTree> DominatorTreeF;
   bool isGPUEntryPoint;
   std::map<llvm::BasicBlock *, BasicBlock *> BasicBlockMap;
+  std::map<BasicBlock *, llvm::BasicBlock *> ReverseBasicBlockMap;
   std::map<llvm::Value *, ref<Expr>> ValueExprMap;
   std::map<llvm::PHINode *, Var *> PhiVarMap;
   std::map<llvm::PHINode *, std::vector<PhiPair>> PhiAssignsMap;
@@ -90,6 +93,9 @@ class TranslateFunction {
   static SpecialFnMapTy &
   initSpecialFunctionMap(TranslateModule::SourceLanguage SL);
 
+  static std::unique_ptr<llvm::DominatorTree>
+  initDominatorTree(llvm::Function *F);
+
   ref<Expr>
   maybeTranslateSIMDInst(bugle::BasicBlock *BBB, llvm::Type *Ty,
                          llvm::Type *OpTy, ref<Expr> Op,
@@ -107,6 +113,7 @@ class TranslateFunction {
                       std::vector<ref<Expr>> &assigns);
   void addPhiAssigns(BasicBlock *BBB, llvm::BasicBlock *Pred,
                      llvm::BasicBlock *Succ);
+  ref<Expr> addEvalStmt(BasicBlock *BBB, ref<Expr> e);
   SourceLocsRef extractSourceLocsForBlock(llvm::BasicBlock *BB);
   SourceLocsRef extractSourceLocs(llvm::Instruction *I);
   void specifyZeroDimensions(unsigned PtrArgs);
@@ -118,7 +125,8 @@ class TranslateFunction {
 public:
   TranslateFunction(TranslateModule *TM, bugle::Function *BF, llvm::Function *F,
                     bool isGPUEntryPoint)
-      : TM(TM), BF(BF), F(F), isGPUEntryPoint(isGPUEntryPoint), ReturnVar(0),
+      : TM(TM), BF(BF), F(F), DominatorTreeF(initDominatorTree(F)),
+        isGPUEntryPoint(isGPUEntryPoint), ReturnVar(nullptr),
         LoadsAreTemporal(true), currentSourceLocs(new SourceLocs),
         SpecialFunctionMap(initSpecialFunctionMap(TM->SL)) {}
 

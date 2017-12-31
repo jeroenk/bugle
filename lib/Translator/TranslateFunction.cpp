@@ -463,6 +463,12 @@ TranslateFunction::initSpecialFunctionMap(TranslateModule::SourceLanguage SL) {
   return SpecialFunctionMap;
 }
 
+std::unique_ptr<DominatorTree>
+TranslateFunction::initDominatorTree(llvm::Function *F) {
+  return !F->isDeclaration() ? llvm::make_unique<llvm::DominatorTree>(*F)
+                             : nullptr;
+}
+
 void TranslateFunction::specifyZeroDimensions(unsigned PtrArgs) {
   ArraySpec &AS = TM->GPUArraySizes[F->getName()];
   if (AS.size() != PtrArgs) {
@@ -585,6 +591,7 @@ void TranslateFunction::translate() {
   for (auto &BB : *F) {
     AddBasicBlockInOrder(BBSet, BBList, &BB);
     BasicBlockMap[&BB] = BF->addBasicBlock(BB.getName());
+    ReverseBasicBlockMap[BasicBlockMap[&BB]] = &BB;
   }
 
   for (auto *BBB : BBList) {
@@ -646,8 +653,7 @@ ref<Expr> TranslateFunction::translateValue(llvm::Value *V,
 
   if (isa<UndefValue>(V)) {
     ref<Expr> E = HavocExpr::create(TM->translateType(V->getType()));
-    BBB->addEvalStmt(E, currentSourceLocs);
-    return E;
+    return addEvalStmt(BBB, E);
   }
 
   if (auto C = dyn_cast<Constant>(V))
@@ -693,6 +699,19 @@ void TranslateFunction::addPhiAssigns(bugle::BasicBlock *BBB,
 
   if (!Vars.empty())
     BBB->addStmt(VarAssignStmt::create(Vars, Exprs));
+}
+
+ref<Expr> TranslateFunction::addEvalStmt(bugle::BasicBlock *BBB, ref<Expr> e) {
+  if (e->hasEvalStmt()) {
+    auto *defBB = ReverseBasicBlockMap[e->getEvalStmt()->getParent()];
+    auto *useBB = ReverseBasicBlockMap[BBB];
+    assert(DominatorTreeF != nullptr);
+    if (!DominatorTreeF->dominates(defBB, useBB))
+      e = e->shallowCopy();
+  }
+
+  BBB->addEvalStmt(e, currentSourceLocs);
+  return e;
 }
 
 SourceLocsRef
@@ -1157,7 +1176,8 @@ ref<Expr> TranslateFunction::handleArraySnapshot(bugle::BasicBlock *BBB,
   ref<Expr> dstArrayIdExpr = ArrayIdExpr::create(Args[0], TM->defaultRange());
   ref<Expr> srcArrayIdExpr = ArrayIdExpr::create(Args[1], TM->defaultRange());
   ref<Expr> E = ArraySnapshotExpr::create(dstArrayIdExpr, srcArrayIdExpr);
-  BBB->addEvalStmt(E, currentSourceLocs);
+  addEvalStmt(BBB, E);
+
   if (dstArrayIdExpr->getType().range().isKind(Type::Unknown) ||
       srcArrayIdExpr->getType().range().isKind(Type::Unknown) ||
       dstArrayIdExpr->getType().range() != srcArrayIdExpr->getType().range())
@@ -1194,7 +1214,7 @@ ref<Expr> TranslateFunction::handleAtomic(bugle::BasicBlock *BBB,
       ref<Expr> E = AtomicExpr::create(PtrArr, PartOfs, AtomicArgs,
                                        CI->getCalledFunction()->getName(),
                                        NumElems, i + 1);
-      BBB->addEvalStmt(E, currentSourceLocs);
+      E = addEvalStmt(BBB, E);
       Elems.push_back(E);
     }
     result = Expr::createBVConcatN(Elems);
@@ -1336,7 +1356,7 @@ ref<Expr> TranslateFunction::handleMemset(bugle::BasicBlock *BBB,
         ValExpr = SafeBVToPtrExpr::create(ValExpr->getType().width, ValExpr);
       ref<Expr> StoreOfs = BVAddExpr::create(
           DstDiv, BVConstExpr::create(Dst->getType().width, i));
-      BBB->addEvalStmt(ValExpr, currentSourceLocs);
+      ValExpr = addEvalStmt(BBB, ValExpr);
       BBB->addStmt(
           StoreStmt::create(DstPtrArr, StoreOfs, ValExpr, currentSourceLocs));
     }
@@ -1406,7 +1426,7 @@ ref<Expr> TranslateFunction::handleMemcpy(bugle::BasicBlock *BBB,
           LoadExpr::create(SrcPtrArr, LoadOfs, SrcRangeTy, LoadsAreTemporal);
       ref<Expr> StoreOfs = BVAddExpr::create(
           DstDiv, BVConstExpr::create(Dst->getType().width, i));
-      BBB->addEvalStmt(Val, currentSourceLocs);
+      Val = addEvalStmt(BBB, Val);
       BBB->addStmt(
           StoreStmt::create(DstPtrArr, StoreOfs, Val, currentSourceLocs));
     }
@@ -1647,7 +1667,7 @@ ref<Expr> TranslateFunction::handleWaitGroupEvents(bugle::BasicBlock *BBB,
         EventsPtrOfs, BVConstExpr::create(TM->BM->getPointerWidth(), i));
     auto LE =
         LoadExpr::create(EventsPtrArr, Off, EventsRangeTy, LoadsAreTemporal);
-    BBB->addEvalStmt(LE, currentSourceLocs);
+    LE = addEvalStmt(BBB, LE);
     BBB->addStmt(WaitGroupEventStmt::create(LE, currentSourceLocs));
   }
 
@@ -1992,16 +2012,14 @@ ref<Expr> TranslateFunction::handleAddNoovflUnsigned(bugle::BasicBlock *BBB,
                                                      llvm::CallInst *CI,
                                                      const ExprVec &Args) {
   ref<Expr> E = AddNoovflExpr::create(Args[0], Args[1], /*isSigned=*/false);
-  BBB->addEvalStmt(E, currentSourceLocs);
-  return E;
+  return addEvalStmt(BBB, E);
 }
 
 ref<Expr> TranslateFunction::handleAddNoovflSigned(bugle::BasicBlock *BBB,
                                                    llvm::CallInst *CI,
                                                    const ExprVec &Args) {
   ref<Expr> E = AddNoovflExpr::create(Args[0], Args[1], /*isSigned=*/true);
-  BBB->addEvalStmt(E, currentSourceLocs);
-  return E;
+  return addEvalStmt(BBB, E);
 }
 
 ref<Expr> TranslateFunction::handleAddNoovflPredicate(bugle::BasicBlock *BBB,
@@ -2068,7 +2086,7 @@ ref<Expr> TranslateFunction::maybeTranslateSIMDInst(
   for (unsigned i = 0; i < NumElems; ++i) {
     ref<Expr> Opi = BVExtractExpr::create(Op, i * ElemWidth, ElemWidth);
     ref<Expr> Elem = F(VT->getElementType(), Opi);
-    BBB->addEvalStmt(Elem, currentSourceLocs);
+    Elem = addEvalStmt(BBB, Elem);
     Elems.push_back(Elem);
   }
 
@@ -2090,7 +2108,7 @@ ref<Expr> TranslateFunction::maybeTranslateSIMDInst(
     ref<Expr> LHSi = BVExtractExpr::create(LHS, i * ElemWidth, ElemWidth);
     ref<Expr> RHSi = BVExtractExpr::create(RHS, i * ElemWidth, ElemWidth);
     ref<Expr> Elem = F(LHSi, RHSi);
-    BBB->addEvalStmt(Elem, currentSourceLocs);
+    Elem = addEvalStmt(BBB, Elem);
     Elems.push_back(Elem);
   }
 
@@ -2184,7 +2202,7 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
               Div, BVConstExpr::create(Div->getType().width, i));
           ref<Expr> ValElem =
               LoadExpr::create(PtrArr, ElemOfs, LoadElTy, LoadsAreTemporal);
-          BBB->addEvalStmt(ValElem, currentSourceLocs);
+          ValElem = addEvalStmt(BBB, ValElem);
           if (LoadElTy.isKind(Type::Pointer))
             ValElem =
                 SafePtrToBVExpr::create(ValElem->getType().width, ValElem);
@@ -2207,8 +2225,8 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
             Div, BVConstExpr::create(Div->getType().width, i));
         ref<Expr> PartVal =
             LoadExpr::create(PtrArr, PartOfs, ArrRangeTy, LoadsAreTemporal);
+        PartVal = addEvalStmt(BBB, PartVal);
         PartsLoaded.push_back(PartVal);
-        BBB->addEvalStmt(PartVal, currentSourceLocs);
       }
       E = Expr::createBVConcatN(PartsLoaded);
       if (LoadTy.isKind(Type::Pointer))
@@ -2273,10 +2291,10 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
                     .isNull()) {
       if (StoreTy.isKind(Type::Pointer)) {
         Val = SafePtrToBVExpr::create(Val->getType().width, Val);
-        BBB->addEvalStmt(Val, currentSourceLocs);
+        Val = addEvalStmt(BBB, Val);
       } else if (StoreTy.isKind(Type::FunctionPointer)) {
         Val = FuncPtrToBVExpr::create(Val->getType().width, Val);
-        BBB->addEvalStmt(Val, currentSourceLocs);
+        Val = addEvalStmt(BBB, Val);
       }
       for (unsigned i = 0; i != Val->getType().width / ArrRangeTy.width; ++i) {
         ref<Expr> PartOfs = BVAddExpr::create(
@@ -2307,7 +2325,7 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
                                LHS, RHS,
                                [&](ref<Expr> LHS, ref<Expr> RHS) -> ref<Expr> {
       ref<Expr> E = TM->translateICmp(II->getPredicate(), LHS, RHS);
-      BBB->addEvalStmt(E, currentSourceLocs);
+      E = addEvalStmt(BBB, E);
       return BoolToBVExpr::create(E);
     });
   } else if (auto *FI = dyn_cast<FCmpInst>(I)) {
@@ -2325,7 +2343,7 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
         E = OrExpr::create(E, FLtExpr::create(LHS, RHS));
       if (FI->getPredicate() & FCmpInst::FCMP_UNO)
         E = OrExpr::create(E, FUnoExpr::create(LHS, RHS));
-      BBB->addEvalStmt(E, currentSourceLocs);
+      E = addEvalStmt(BBB, E);
       return BoolToBVExpr::create(E);
     });
   } else if (auto *ZEI = dyn_cast<ZExtInst>(I)) {
@@ -2523,7 +2541,7 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
           auto *V = CI->getCalledValue();
           E = TM->modelCallExpr(V->getType(), CI->getCalledFunction(),
                                 translateValue(V, BBB), Args);
-          BBB->addEvalStmt(E, currentSourceLocs);
+          E = addEvalStmt(BBB, E);
           ValueExprMap[I] = TM->unmodelValue(F, E);
           return;
         }
@@ -2542,7 +2560,7 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
     if (BI->isConditional()) {
       ref<Expr> Cond =
           BVToBoolExpr::create(translateValue(BI->getCondition(), BBB));
-      BBB->addEvalStmt(Cond, currentSourceLocs);
+      Cond = addEvalStmt(BBB, Cond);
 
       bugle::BasicBlock *TrueBB = BF->addBasicBlock("truebb");
       TrueBB->addStmt(AssumeStmt::createPartition(Cond));
@@ -2606,10 +2624,11 @@ void TranslateFunction::translateInstruction(bugle::BasicBlock *BBB,
     std::string msg = "Instruction '" + name + "' not supported";
     ErrorReporter::reportImplementationLimitation(msg);
   }
-  ValueExprMap[I] = E;
+
   if (LoadsAreTemporal)
-    BBB->addEvalStmt(E, currentSourceLocs);
-  return;
+    ValueExprMap[I] = addEvalStmt(BBB, E);
+  else
+    ValueExprMap[I] = E;
 }
 
 void TranslateFunction::translateBasicBlock(bugle::BasicBlock *BBB,
